@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>極簡彈幕遊戲 - 東方風格</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: white;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        canvas {
+            background-color: #000;
+            border: 2px solid #fff;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+        }
+        .ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ui">
+        <div>Score: <span id="score">0</span></div>
+        <div>Boss HP: <span id="hp">100</span>%</div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const hpEl = document.getElementById('hp');
+
+    canvas.width = 450;
+    canvas.height = 600;
+
+    // 遊戲狀態
+    let score = 0;
+    let frameCount = 0;
+    let keys = {};
+
+    // 玩家設定
+    const player = {
+        x: canvas.width / 2,
+        y: canvas.height - 50,
+        speed: 4,
+        radius: 4, // 判定點較小（東方特色）
+        bullets: []
+    };
+
+    // Boss 設定
+    const boss = {
+        x: canvas.width / 2,
+        y: 80,
+        hp: 1000,
+        maxHp: 1000,
+        targetX: canvas.width / 2,
+        bullets: []
+    };
+
+    // 監聽按鍵
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    function update() {
+        frameCount++;
+
+        // 1. 玩家移動
+        if (keys['ArrowUp'] && player.y > 0) player.y -= player.speed;
+        if (keys['ArrowDown'] && player.y < canvas.height) player.y += player.speed;
+        if (keys['ArrowLeft'] && player.x > 0) player.x -= player.speed;
+        if (keys['ArrowRight'] && player.x < canvas.width) player.x += player.speed;
+
+        // 2. 玩家射擊 (每 5 幀射一次)
+        if (frameCount % 5 === 0) {
+            player.bullets.push({ x: player.x, y: player.y - 10, speed: 10 });
+        }
+
+        // 更新玩家子彈
+        player.bullets.forEach((b, index) => {
+            b.y -= b.speed;
+            if (b.y < 0) player.bullets.splice(index, 1);
+
+            // 碰撞 Boss 判定
+            let dist = Math.hypot(b.x - boss.x, b.y - boss.y);
+            if (dist < 30) {
+                boss.hp -= 1;
+                score += 10;
+                player.bullets.splice(index, 1);
+            }
+        });
+
+        // 3. Boss 行為
+        if (frameCount % 100 === 0) {
+            boss.targetX = Math.random() * (canvas.width - 100) + 50;
+        }
+        boss.x += (boss.targetX - boss.x) * 0.05;
+
+        // 4. Boss 彈幕生成 (環狀彈幕)
+        if (frameCount % 10 === 0) {
+            let count = 8;
+            let angleStep = (Math.PI * 2) / count;
+            let offset = frameCount * 0.05; // 讓彈幕旋轉
+            for (let i = 0; i < count; i++) {
+                boss.bullets.push({
+                    x: boss.x,
+                    y: boss.y,
+                    vx: Math.cos(angleStep * i + offset) * 3,
+                    vy: Math.sin(angleStep * i + offset) * 3,
+                    radius: 5
+                });
+            }
+        }
+
+        // 更新 Boss 子彈
+        boss.bullets.forEach((b, index) => {
+            b.x += b.vx;
+            b.y += b.vy;
+
+            // 越界移除
+            if (b.y > canvas.height || b.y < 0 || b.x > canvas.width || b.x < 0) {
+                boss.bullets.splice(index, 1);
+            }
+
+            // 碰撞玩家判定 (Hitbox)
+            let dist = Math.hypot(b.x - player.x, b.y - player.y);
+            if (dist < player.radius + b.radius) {
+                gameOver();
+            }
+        });
+
+        // 更新 UI
+        scoreEl.innerText = score;
+        hpEl.innerText = Math.max(0, Math.floor((boss.hp / boss.maxHp) * 100));
+
+        if (boss.hp <= 0) {
+            alert("Mission Complete! 你擊敗了 Boss!");
+            resetGame();
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 畫 Boss
+        ctx.fillStyle = "#f0f";
+        ctx.beginPath();
+        ctx.arc(boss.x, boss.y, 25, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 畫玩家
+        ctx.fillStyle = "#0af";
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+        // 判定點
+        ctx.fillStyle = "white";
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 畫玩家子彈
+        ctx.fillStyle = "#ff0";
+        player.bullets.forEach(b => {
+            ctx.fillRect(b.x - 2, b.y, 4, 10);
+        });
+
+        // 畫 Boss 彈幕
+        ctx.fillStyle = "#f33";
+        boss.bullets.forEach(b => {
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+
+    function gameOver() {
+        alert("Game Over! 分數: " + score);
+        resetGame();
+    }
+
+    function resetGame() {
+        score = 0;
+        boss.hp = boss.maxHp;
+        boss.bullets = [];
+        player.bullets = [];
+        player.x = canvas.width / 2;
+        player.y = canvas.height - 50;
+    }
+
+    function loop() {
+        update();
+        draw();
+        requestAnimationFrame(loop);
+    }
+
+    loop();
+</script>
+</body>
+</html>
